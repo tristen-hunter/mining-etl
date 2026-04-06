@@ -1,0 +1,40 @@
+# Virtual environments
+
+venv/
+.env/
+
+# Data Files
+
+archive/
+mining-data/
+
+# Python cache / compiled files
+
+**pycache**/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment variables
+
+.env
+.env.*
+
+# VS Code settings
+
+.vscode/
+
+# OS files
+
+.DS_Store
+Thumbs.db
+
+# Logs
+
+*.log
+
+# Build / distribution files
+
+build/
+dist/
+*.egg-info/

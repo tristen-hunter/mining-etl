@@ -7,6 +7,7 @@ venv/
 
 archive/
 mining-data/
+master/
 
 # Python cache / compiled files
 

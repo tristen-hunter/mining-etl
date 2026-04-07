@@ -1,0 +1,13 @@
+{
+  "loading_list_source": "LOADING FLEET LIST FOR OLF TO LONDANI 27.03.2026.xlsx",
+  "olf_source": "HMS - OLF 27.03.2026 (7).xlsx",
+  "olf_version_logic": "highest row count, then highest version number",
+  "olf_warnings": [],
+  "tons_sources": [
+    "DAILY TONS REPORT HMS 27.03.2026.xls",
+    "DAILY TONS REPORT KALAMIN 27.03.2026.xls"
+  ],
+  "tons_row_count": 25,
+  "processed_at": "2026-04-06T11:51:43",
+  "date": "2026/March/27"
+}

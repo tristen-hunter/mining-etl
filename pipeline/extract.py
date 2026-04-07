@@ -10,7 +10,6 @@ DEST_DIR = os.path.join(os.path.dirname(__file__), '..', 'archive')
 
 MASTER_DIR = os.path.join(os.path.dirname(__file__), '..', 'master')
 os.makedirs(MASTER_DIR, exist_ok=True)
-
 os.makedirs(DEST_DIR, exist_ok=True)
 
 print(f"Source : {SOURCE_DIR}")
@@ -35,15 +34,28 @@ DATE_PATTERNS = [
     # 4. DD.MM (Short - use current year/month)
     r"(?P<day>\d{1,2})[.\-_/ ](?P<month>\d{1,2})(?!\d)",
     # 5. Just the Day (Very Low Confidence - match at end of string)
-    r"(?P<day>\d{1,2})$" 
+    r"(?P<day>\d{1,2})$"
 ]
 
-# Patterns used to find & strip the raw date from the name string
 DATE_STRIP_PATTERNS = [
-    r"\d{1,2}[.\-_/ ]\d{1,2}[.\-_/ ]20\d{2}",   # DD.MM.YYYY / DD-MM-YYYY etc.
-    r"20\d{2}[.\-_/]\d{1,2}[.\-_/]\d{1,2}",       # YYYY-MM-DD
-    r"\d{1,2}\s+[A-Z]{3,}\s+20\d{2}",             # DD MONTH YYYY
-    r"\d{1,2}[.\-_/ ]\d{1,2}(?!\d)",              # DD.MM (short)
+    r"\d{1,2}[.\-_/]\d{1,2}[.\-_/]20\d{2}",   # DD.MM.YYYY / DD-MM-YYYY etc.
+    r"20\d{2}[.\-_/]\d{1,2}[.\-_/]\d{1,2}",    # YYYY-MM-DD
+    r"\d{1,2}\s+[A-Z]{3,}\s+20\d{2}",           # DD MONTH YYYY
+    r"\d{1,2}[.\-_/ ]\d{1,2}(?!\d)",            # DD.MM (short)
+]
+
+# WhatsApp forwarding artifacts left behind after the date is stripped.
+# These are sequence/order numbers the sender prepended to the filename.
+# Order matters — longest/most-specific patterns must come first.
+JUNK_STRIP_PATTERNS = [
+    r'\s*-\s*\.\d+-\d+',      # ' - .2-3'
+    r'\s*-\s*\.\d+',          # ' - .206', ' - .2'
+    r'\s*-\s*\(\d+\)-\d+',    # ' - (2)-4'
+    r'\s*-\s*\(\d+\)',         # ' - (2)'
+    r'\s*-\s*-\d+',           # ' - -1', ' - -2'
+    r'\s*\.\s*xlsx\s*',       # '.xlsx' embedded mid-name (amended file edge case)
+    r'\.(?=\s|\(|$)',          # lone dot before space, '(', or end of string
+    r'\s*-\s*$',               # trailing lone dash
 ]
 
 CURRENT_YEAR = datetime.now().year
@@ -61,31 +73,28 @@ def extract_date(filename):
         parts = match.groupdict()
         raw_year = parts.get('year')
 
-        # --- REFACTORED YEAR LOGIC ---
         if raw_year:
             if len(raw_year) == 4:
                 year = int(raw_year)
             elif len(raw_year) == 2:
                 year = 2000 + int(raw_year)
             else:
-                # If it's 1 or 3 digits (like '206'), it's a bad match
-                year = CURRENT_YEAR 
+                # 1 or 3 digit year (e.g. '206') is a bad match — use current year
+                year = CURRENT_YEAR
         else:
             year = CURRENT_YEAR
 
-        # --- REFACTORED MONTH LOGIC ---
         if parts.get('month_name'):
             month = MONTHS.get(parts['month_name'])
-            if month is None: continue
+            if month is None:
+                continue
         elif parts.get('month'):
             month = int(parts['month'])
         else:
-            # Fallback if the pattern only matched a Day (e.g. Fujax-27.xlsx)
-            month = datetime.now().month 
+            month = datetime.now().month
 
         day = int(parts['day'])
 
-        # Ambigous check (only if month was actually in the filename)
         if parts.get('month') and day <= 12 and month <= 12 and i >= 1:
             print(f"   [AMBIGUOUS] '{match.group()}' in '{filename}'...")
 
@@ -99,36 +108,33 @@ def extract_date(filename):
 
 def rename_file(filename, date_obj):
     """
-    1. Strip the first 9 characters (e.g. '00003245-').
-    2. Find and remove the raw date from wherever it sits in the name.
-    3. Append the date reformatted as DD.MM.YYYY at the end.
-    4. Preserve the file extension.
+    1. Strip the leading 9-character WhatsApp prefix (e.g. '00003245-').
+    2. Remove the raw date from wherever it sits in the name.
+    3. Strip known WhatsApp junk fragments left behind after date removal.
+    4. Append the date reformatted as DD.MM.YYYY at the end.
+    5. Preserve the file extension.
     """
     name, ext = os.path.splitext(filename)
 
     # Step 1 — strip the leading 9-character prefix
     name = name[9:]
 
-    # Step 2 — find and remove the raw date, preserve everything else
-    # Order matters: longer/more specific patterns first
-    DATE_STRIP_PATTERNS = [
-        r"\d{1,2}[.\-_/]\d{1,2}[.\-_/]20\d{2}",  # DD.MM.YYYY or DD-MM-YYYY
-        r"20\d{2}[.\-_/]\d{1,2}[.\-_/]\d{1,2}",   # YYYY-MM-DD
-        r"\d{1,2}\s+[A-Z]{3,}\s+20\d{2}",          # DD MONTH YYYY
-        r"\d{1,2}[.\-_/]\d{1,2}(?!\d)",            # DD.MM (no year)
-    ]
-
+    # Step 2 — strip the date (longer/more-specific patterns first)
     cleaned = name
     for pattern in DATE_STRIP_PATTERNS:
         cleaned, n_subs = re.subn(pattern, '', cleaned, flags=re.IGNORECASE)
         if n_subs:
-            break  # stop after first match so we don't double-strip
+            break
 
-    # Clean up whitespace/punctuation left behind by the removal
-    cleaned = re.sub(r'[\s\-]+$', '', cleaned)   # trailing spaces/dashes
-    cleaned = re.sub(r'\s{2,}', ' ', cleaned)    # collapse double spaces
+    # Step 3 — strip WhatsApp junk fragments
+    for pattern in JUNK_STRIP_PATTERNS:
+        cleaned = re.sub(pattern, ' ', cleaned, flags=re.IGNORECASE)
 
-    # Step 3 — append reformatted date
+    # Step 4 — normalise whitespace/punctuation
+    cleaned = re.sub(r'[\s\-]+$', '', cleaned).strip()
+    cleaned = re.sub(r'\s{2,}', ' ', cleaned)
+
+    # Step 5 — append standardised date
     formatted_date = date_obj.strftime("%d.%m.%Y")
     new_name = f"{cleaned} {formatted_date}".strip()
 
@@ -155,7 +161,6 @@ IGNORE_EXTENSIONS = ['.txt', '.py', '.exe', '.ini']
 for filename in sorted(os.listdir(SOURCE_DIR)):
     file_path = os.path.join(SOURCE_DIR, filename)
 
-    # Get extension for the ignore check
     name_part, ext = os.path.splitext(filename)
 
     if not os.path.isfile(file_path):
@@ -175,12 +180,11 @@ for filename in sorted(os.listdir(SOURCE_DIR)):
         stats["undated"] += 1
         continue
 
-    # ── Rename ──
     new_filename = rename_file(filename, date_obj)
 
-    year_str   = str(date_obj.year)
-    month_str  = date_obj.strftime("%B")
-    day_str    = f"{date_obj.day:02d}"
+    year_str      = str(date_obj.year)
+    month_str     = date_obj.strftime("%B")
+    day_str       = f"{date_obj.day:02d}"
     target_folder = os.path.join(DEST_DIR, year_str, month_str, day_str)
     os.makedirs(target_folder, exist_ok=True)
 

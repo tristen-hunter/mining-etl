@@ -8,6 +8,9 @@ venv/
 archive/
 mining-data/
 master/
+DB/
+reports/
+.pdf
 
 # Python cache / compiled files
 
